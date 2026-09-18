@@ -7,6 +7,7 @@ const REG_NO = process.env.REG_NO || '99999999';
 const INTERVAL_MS = Number(process.env.INTERVAL_MS) || 5 * 60 * 1000;
 const PORT = process.env.PORT || 10000;
 const ERROR_TEXT = 'Reg No Incorrect!';
+const FORM_PAGE = `${BASE_URL}/mark`; // GET page that shows the form (it POSTs to /markview)
 
 // ---------- Health-check server (for Render etc.) ----------
 let lastRun = { time: null, result: 'not run yet' };
@@ -51,8 +52,8 @@ async function runOnce(browser) {
   page.setDefaultTimeout(20000);
 
   try {
-    log('Navigating to markview...');
-    const resp = await page.goto(`${BASE_URL}/markview`, {
+    log('Navigating to mark form page...');
+    const resp = await page.goto(FORM_PAGE, {
       waitUntil: 'domcontentloaded',
       timeout: 60000,
     });
@@ -83,9 +84,15 @@ async function runOnce(browser) {
     log(`POST /markview -> HTTP ${postResp.status()}`);
     await page.waitForLoadState('load');
 
-    // Check for the error banner: <div class="alert">Reg No Incorrect!</div>
+    // The banner may appear after a redirect back to /mark, so wait for it briefly
+    // instead of checking once. <div class="alert">Reg No Incorrect!</div>
     const banner = page.locator('.alert', { hasText: ERROR_TEXT });
-    const hasError = (await banner.count()) > 0;
+    const hasError = await banner
+      .first()
+      .waitFor({ state: 'visible', timeout: 8000 })
+      .then(() => true)
+      .catch(() => false);
+    log(`Final URL after submit: ${page.url()}`);
 
     if (hasError) {
       log(`RESULT: "${ERROR_TEXT}" detected on live site.`);
