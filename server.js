@@ -25,38 +25,40 @@ async function runAutomation() {
   try {
     console.log('Navigating to markview...');
     await page.goto('https://mahavishnueducational.com/markview', { 
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 60000 
     });
 
-    // 1. Target input box directly by placeholder
-    console.log('Locating Roll No field...');
-    const input = page.locator('input[placeholder="Roll No"]');
-    await input.waitFor({ state: 'attached', timeout: 10000 });
-    await input.fill('99999999');
-    console.log('Filled Roll No: 99999999');
+    // Wait a brief moment for dynamic JS/CSS to finish loading
+    await page.waitForTimeout(3000);
 
-    // 2. Target submit button directly by name attribute
+    // Locate the primary input inside the form container
+    console.log('Locating form input field...');
+    const input = page.locator('form input').first();
+    
+    // Force fill to bypass layout/visibility recalculation blocks
+    await input.fill('99999999', { force: true });
+    console.log('Filled register number: 99999999');
+
+    // Click button with name="submit" or the primary submit button in the form
     console.log('Clicking submit button...');
-    const submitBtn = page.locator('button[name="submit"]');
+    const submitBtn = page.locator('button[name="submit"], form button, form input[type="submit"]').first();
     
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => null),
-      submitBtn.click()
+      submitBtn.click({ force: true })
     ]);
 
-    // 3. Detect the error message banner
-    const errorBanner = page.locator('div.spacer2');
-    if (await errorBanner.isVisible()) {
-      const errorText = await errorBanner.textContent();
-      console.log(`DETECTED ERROR ON SITE: "${errorText.trim()}"`);
-
-      // Trigger redirect action test
+    // Check for the error text on the page
+    const pageContent = await page.content();
+    if (pageContent.includes('Reg No Incorrect!')) {
+      console.log('CRITICAL: Error "Reg No Incorrect!" detected on live site!');
+      
       console.log('Redirecting worker session to login page...');
       await page.goto('https://mahavishnueducational.com/login', { waitUntil: 'networkidle' });
       console.log(`Worker successfully navigated to: ${page.url()}`);
     } else {
-      console.log('No error banner detected.');
+      console.log('No error banner detected on submission.');
     }
 
   } catch (err) {
