@@ -1,7 +1,6 @@
 const { chromium } = require('playwright');
 const http = require('http');
 
-// Health check server for Render
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Playwright Automation Bot Running\n');
@@ -29,49 +28,25 @@ async function runAutomation() {
       timeout: 60000 
     });
 
-    // Wait for inputs to be present in the DOM
-    console.log('Waiting for input elements to render...');
-    await page.waitForSelector('input', { state: 'attached', timeout: 15000 });
+    // 1. Locate the visible text box (bypassing the 31 hidden debug inputs)
+    console.log('Locating Roll No text field...');
+    const input = page.locator('input[type="text"]').filter({ hasNotClass: 'sf-dump-search-input' }).first();
+    await input.fill('99999999', { force: true });
+    console.log('Filled register number successfully.');
 
-    // Find the first visible input field on the page
-    const inputs = page.locator('input');
-    const count = await inputs.count();
-    console.log(`Found ${count} total input elements on page.`);
-
-    let targetInput = null;
-    for (let i = 0; i < count; i++) {
-      const input = inputs.nth(i);
-      const isVisible = await input.isVisible();
-      const type = await input.getAttribute('type');
-      
-      // Target the first non-hidden input
-      if (isVisible && type !== 'hidden') {
-        console.log(`Targeting input at index ${i} (type: ${type})`);
-        targetInput = input;
-        break;
-      }
-    }
-
-    if (!targetInput) {
-      // Fallback to the very first input if visibility check is strict
-      console.log('Fallback: selecting first input element.');
-      targetInput = inputs.first();
-    }
-
-    console.log('Filling register number...');
-    await targetInput.fill('99999999', { force: true });
-    console.log('Filled successfully.');
-
-    // Locate submit button
+    // 2. Target the submit button directly using exact attributes from DevTools
     console.log('Locating submit button...');
-    const submitBtn = page.locator('button[name="submit"], button:has-text("Submit"), input[type="submit"]').first();
+    const submitBtn = page.locator('button[name="submit"], button.btn-primary, button:has-text("Submit")').first();
+    await submitBtn.waitFor({ state: 'attached', timeout: 10000 });
     
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => null),
-      submitBtn.click({ force: true })
-    ]);
+    // Perform press action to submit form directly
+    await submitBtn.focus();
+    await submitBtn.press('Enter');
+    console.log('Submit action triggered via enter keypress.');
 
-    // Check results
+    await page.waitForTimeout(4000); // Wait for page DOM update
+
+    // 3. Detect the error banner on the page
     const pageContent = await page.content();
     if (pageContent.includes('Reg No Incorrect!')) {
       console.log('CRITICAL: Error "Reg No Incorrect!" detected on live site!');
