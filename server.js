@@ -1,22 +1,20 @@
 const { chromium } = require('playwright');
 const http = require('http');
 
-// Simple HTTP server so Render registers your app as active
+// Health check server for Render
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Playwright Automation Service is Running\n');
+  res.end('Playwright Live Tester is Running\n');
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`Health check server listening on port ${PORT}`);
 });
 
-// Automation Function
-(async () => {
-  console.log('--- Starting Cloud Playwright Worker ---');
-  
-  // Launch Playwright with Linux sandbox bypass flags required for cloud containers
+async function runRealtimeTest() {
+  console.log('--- Launching Real-Time Website Test ---');
+
   const browser = await chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -25,22 +23,39 @@ server.listen(PORT, () => {
   const page = await browser.newPage();
 
   try {
-    await page.goto('https://mahavishnueducational.com/mark');
-    await page.fill('input[type="text"]', '12345');
+    // 1. Navigate to the live markview URL
+    console.log('Navigating to live URL...');
+    await page.goto('https://mahavishnueducational.com/markview', { waitUntil: 'networkidle' });
+
+    // 2. Fill in a test register number to trigger the error
+    // (Adjust input selector if the field uses a specific name or ID)
+    await page.fill('input[type="text"]', '99999999'); 
     await page.click('button[type="submit"], input[type="submit"]');
 
-    const errorBanner = page.locator('div.alert-success:has-text("Reg No Incorrect!")');
-    await errorBanner.waitFor({ state: 'visible', timeout: 5000 });
+    // 3. Wait to see if the page redirects or shows the error banner
+    await page.waitForTimeout(3000);
 
-    console.log('ERROR DETECTED: Reg No Incorrect!');
-    console.log('Redirecting to https://mahavishnueducational.com/login...');
-    
-    await page.goto('https://mahavishnueducational.com/login');
-    console.log('Successfully navigated to login page on Render cloud!');
+    const currentUrl = page.url();
+    console.log(`Current Page URL after submission: ${currentUrl}`);
+
+    if (currentUrl.includes('/login')) {
+      console.log('SUCCESS: Real-time website redirected to the login page!');
+    } else {
+      console.log('NOTICE: Page did not redirect automatically. Checking for error banner...');
+      const errorText = await page.textContent('body');
+      
+      if (errorText.includes('Reg No Incorrect!')) {
+        console.log('Error banner detected on live page!');
+      }
+    }
 
   } catch (err) {
-    console.log('Error or timeout during automation execution:', err.message);
+    console.error('Test execution error:', err.message);
   } finally {
     await browser.close();
+    console.log('--- Real-Time Test Complete ---');
   }
-})();
+}
+
+// Run the test on startup
+runRealtimeTest();
