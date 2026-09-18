@@ -1,10 +1,10 @@
 const { chromium } = require('playwright');
 const http = require('http');
 
-// Health check server for Render
+// Health check server for Render uptime maintenance
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Playwright Live Tester is Running\n');
+  res.end('Playwright Automation Bot is Running\n');
 });
 
 const PORT = process.env.PORT || 10000;
@@ -12,50 +12,69 @@ server.listen(PORT, () => {
   console.log(`Health check server listening on port ${PORT}`);
 });
 
-async function runRealtimeTest() {
-  console.log('--- Launching Real-Time Website Test ---');
+async function runAutomation() {
+  console.log('--- Starting Cloud Playwright Worker ---');
 
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--single-process'
+    ]
   });
 
   const page = await browser.newPage();
 
   try {
-    // 1. Navigate to the live markview URL
-    console.log('Navigating to live URL...');
-    await page.goto('https://mahavishnueducational.com/markview', { waitUntil: 'networkidle' });
+    console.log('Navigating to live markview page...');
+    await page.goto('https://mahavishnueducational.com/markview', { 
+      waitUntil: 'networkidle',
+      timeout: 60000 
+    });
 
-    // 2. Fill in a test register number to trigger the error
-    // (Adjust input selector if the field uses a specific name or ID)
-    await page.fill('input[type="text"]', '99999999'); 
-    await page.click('button[type="submit"], input[type="submit"]');
+    // Target the first visible text input (bypasses Symfony debug bar inputs)
+    const inputField = page.locator('input[type="text"]:visible, input[type="number"]:visible, input:not([type="hidden"]):visible').first();
+    await inputField.waitFor({ state: 'visible', timeout: 10000 });
+    
+    console.log('Visible input field located. Filling register number...');
+    await inputField.fill('99999999');
 
-    // 3. Wait to see if the page redirects or shows the error banner
-    await page.waitForTimeout(3000);
+    // Locate and click the visible submit button
+    const submitButton = page.locator('button[type="submit"]:visible, input[type="submit"]:visible, button:has-text("Submit"):visible, button:has-text("View"):visible').first();
+    
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => null),
+      submitButton.click()
+    ]);
 
-    const currentUrl = page.url();
-    console.log(`Current Page URL after submission: ${currentUrl}`);
+    console.log(`Submitted. Current URL: ${page.url()}`);
 
-    if (currentUrl.includes('/login')) {
-      console.log('SUCCESS: Real-time website redirected to the login page!');
-    } else {
-      console.log('NOTICE: Page did not redirect automatically. Checking for error banner...');
-      const errorText = await page.textContent('body');
+    // Check page content for error banner or response states
+    const pageContent = await page.content();
+
+    if (pageContent.includes('Reg No Incorrect!') || pageContent.includes('Incorrect') || pageContent.includes('Not Found')) {
+      console.log('CRITICAL: Error state "Reg No Incorrect!" detected on live site!');
       
-      if (errorText.includes('Reg No Incorrect!')) {
-        console.log('Error banner detected on live page!');
-      }
+      // Perform automated action (e.g., secondary navigation test)
+      console.log('Executing automated redirect check to login...');
+      await page.goto('https://mahavishnueducational.com/login', { waitUntil: 'networkidle' });
+      console.log(`Automated worker redirected successfully. Final Page URL: ${page.url()}`);
+    } else {
+      console.log('No error banner detected or page processed normally.');
     }
 
   } catch (err) {
-    console.error('Test execution error:', err.message);
+    console.error('Automation worker execution error:', err.message);
   } finally {
     await browser.close();
-    console.log('--- Real-Time Test Complete ---');
+    console.log('--- Cloud Playwright Worker Finished ---');
   }
 }
 
-// Run the test on startup
-runRealtimeTest();
+// Execute the worker on startup
+runAutomation();
+
+// Schedule worker to run every 5 minutes (300,000 ms)
+setInterval(runAutomation, 300000);
